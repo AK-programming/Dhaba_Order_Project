@@ -10,14 +10,16 @@ ARG APP_VERSION=dev
 RUN go mod tidy && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${APP_VERSION}" -o /out/orders-api .
 
-# ---- Final stage: the compiled program and CA certificates, nothing else ----
-FROM scratch
+# ---- Final stage: small Alpine runtime with a supported ECR scan database ----
+FROM alpine:3.22
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 LABEL org.opencontainers.image.revision="${APP_VERSION}"
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates
+
 COPY --from=builder /out/orders-api /orders-api
 
 USER 65534:65534

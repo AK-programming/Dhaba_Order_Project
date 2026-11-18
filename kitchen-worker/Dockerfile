@@ -15,7 +15,8 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 LABEL org.opencontainers.image.revision="${APP_VERSION}"
 
-RUN addgroup -S app && adduser -S -G app app
+RUN apk upgrade --no-cache && \
+    addgroup -S app && adduser -S -G app app
 
 WORKDIR /app
 COPY --from=builder /build/target/kitchen-worker-*.jar app.jar

@@ -1,12 +1,12 @@
 # ---- Build stage ----
-FROM python:3.12-slim AS builder
+FROM python:3.12-alpine AS builder
 
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---- Final stage ----
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} \
@@ -14,7 +14,8 @@ ENV APP_VERSION=${APP_VERSION} \
     PYTHONUNBUFFERED=1
 LABEL org.opencontainers.image.revision="${APP_VERSION}"
 
-RUN addgroup --system app && adduser --system --ingroup app app
+RUN apk upgrade --no-cache && \
+    addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /app
 COPY --from=builder /install /usr/local

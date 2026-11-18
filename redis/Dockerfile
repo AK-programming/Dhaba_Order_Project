@@ -1,5 +1,9 @@
 FROM redis:7-alpine
 
+USER root
+RUN apk upgrade --no-cache
+USER redis
+
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 LABEL org.opencontainers.image.revision="${APP_VERSION}"
