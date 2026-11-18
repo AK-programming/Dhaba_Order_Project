@@ -74,10 +74,12 @@ controller and cert-manager, then deploy with:
 
 The worker nodes are `t3.small` instances with an 11-pod limit. The current
 cluster runs staging and production; production has separate database and Redis
-volumes. Both environments are routed through the public NGINX load balancer.
+volumes. Both environments are routed through the public NGINX load balancer,
+and their web Services each have a separate public AWS load balancer for
+immediate direct access before DNS is configured.
 The app has no authentication and its order API returns customer names and
 order details, so do not use real customer data until authentication is added.
-The public load balancer and worker nodes incur ongoing AWS charges.
+The load balancers and worker nodes incur ongoing AWS charges.
 
     kubectl apply -k k8s/overlays/production
 
@@ -92,6 +94,17 @@ ready until DNS points to the load balancer. Retrieve the current target with:
 
     kubectl get svc -n ingress-nginx ingress-nginx-controller \
       -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+
+For direct public HTTP links before DNS is configured, retrieve each web
+Service's AWS hostname (these are not fixed IPs):
+
+    kubectl get svc -n staging web \
+      -o jsonpath='http://{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+    kubectl get svc -n production web \
+      -o jsonpath='http://{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+
+These direct links are HTTP-only. Use the domain links for HTTPS after DNS and
+certificate issuance complete.
 
 The overlays pin application images to the verified commit tag. Update the
 `images` and `APP_VERSION` values in both overlays when deploying a later
