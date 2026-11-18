@@ -117,3 +117,102 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes shellcheck
           find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
+
+  build-and-push:
+    name: Build, scan, and push changed images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - web
+      - menu-api
+      - orders-api
+      - kitchen-worker
+      - stats-api
+      - dockerfiles-and-shell
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find changed services
+        id: changed
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            BEFORE_SHA=$(git hash-object -t tree /dev/null)
+          fi
+
+          services=()
+          for service in web menu-api orders-api kitchen-worker stats-api postgres redis; do
+            if ! git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- "$service/"; then
+              services+=("$service")
+            fi
+          done
+
+          if [[ -d scripts/monitor ]] &&
+             ! git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- ops-monitor/ scripts/monitor/; then
+            services+=(ops-monitor)
+          fi
+
+          services_json=$(jq -cn --args '$ARGS.positional' "${services[@]}")
+          echo "services=$services_json" >> "$GITHUB_OUTPUT"
+          echo "Changed services: ${services[*]:-none}"
+      - name: Configure AWS credentials with OIDC
+        if: steps.changed.outputs.services != '[]'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Build and push images
+        if: steps.changed.outputs.services != '[]'
+        env:
+          TEAM: ${{ vars.TEAM }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          SERVICES_JSON: ${{ steps.changed.outputs.services }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          mapfile -t services < <(jq -r '.[]' <<< "$SERVICES_JSON")
+          AWS_ACCOUNT="$AWS_ACCOUNT" scripts/build-and-push.sh "${services[@]}"
+      - name: Wait for ECR scans and reject critical findings
+        if: steps.changed.outputs.services != '[]'
+        env:
+          TEAM: ${{ vars.TEAM }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT }}
+          SERVICES_JSON: ${{ steps.changed.outputs.services }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          if [[ -z "$AWS_ACCOUNT" ]]; then
+            AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          fi
+
+          while IFS= read -r service; do
+            repository="dhaba-${TEAM}/${service}"
+            echo "Waiting for scan: ${repository}:${IMAGE_TAG}"
+            aws ecr wait image-scan-complete \
+              --region "$AWS_REGION" \
+              --repository-name "$repository" \
+              --image-id "imageTag=${IMAGE_TAG}"
+
+            findings=$(aws ecr describe-image-scan-findings \
+              --region "$AWS_REGION" \
+              --repository-name "$repository" \
+              --image-id "imageTag=${IMAGE_TAG}")
+            status=$(jq -r '.imageScanStatus.status // empty' <<< "$findings")
+            if [[ "$status" != "COMPLETE" ]]; then
+              echo "Image scan did not complete for ${repository}:${IMAGE_TAG} (status: ${status:-unknown})" >&2
+              exit 1
+            fi
+
+            critical=$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' <<< "$findings")
+            echo "${repository}:${IMAGE_TAG} critical findings: ${critical}"
+            if (( critical > 0 )); then
+              echo "Critical ECR findings block this image." >&2
+              exit 1
+            fi
+          done < <(jq -r '.[]' <<< "$SERVICES_JSON")
