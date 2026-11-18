@@ -170,8 +170,13 @@ jobs:
             fi
           done
 
-          if [[ -d scripts/monitor ]] &&
-             ! git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- ops-monitor/ scripts/monitor/; then
+          if ! git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- scripts/build-and-push.sh; then
+            services=(web menu-api orders-api kitchen-worker stats-api postgres redis)
+            if [[ -d scripts/monitor ]]; then
+              services+=(ops-monitor)
+            fi
+          elif [[ -d scripts/monitor ]] &&
+               ! git diff --quiet "$BEFORE_SHA" "$CURRENT_SHA" -- ops-monitor/ scripts/monitor/; then
             services+=(ops-monitor)
           fi
 
@@ -208,19 +213,39 @@ jobs:
             AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           fi
 
+          scan_error=$(mktemp)
+          trap 'rm -f "$scan_error"' EXIT
+
           while IFS= read -r service; do
             repository="dhaba-${TEAM}/${service}"
             echo "Waiting for scan: ${repository}:${IMAGE_TAG}"
-            aws ecr wait image-scan-complete \
-              --region "$AWS_REGION" \
-              --repository-name "$repository" \
-              --image-id "imageTag=${IMAGE_TAG}"
+            findings=""
+            for attempt in {1..60}; do
+              if findings=$(aws ecr describe-image-scan-findings \
+                --region "$AWS_REGION" \
+                --repository-name "$repository" \
+                --image-id "imageTag=${IMAGE_TAG}" 2>"$scan_error"); then
+                status=$(jq -r '.imageScanStatus.status // empty' <<< "$findings")
+                if [[ "$status" == "COMPLETE" ]]; then
+                  break
+                elif [[ "$status" != "IN_PROGRESS" ]]; then
+                  echo "Image scan failed for ${repository}:${IMAGE_TAG} (status: ${status:-unknown})" >&2
+                  cat "$scan_error" >&2
+                  exit 1
+                fi
+              elif ! grep -q "ScanNotFoundException" "$scan_error"; then
+                cat "$scan_error" >&2
+                exit 1
+              fi
 
-            findings=$(aws ecr describe-image-scan-findings \
-              --region "$AWS_REGION" \
-              --repository-name "$repository" \
-              --image-id "imageTag=${IMAGE_TAG}")
-            status=$(jq -r '.imageScanStatus.status // empty' <<< "$findings")
+              if (( attempt == 60 )); then
+                echo "Timed out waiting for ECR scan of ${repository}:${IMAGE_TAG}" >&2
+                cat "$scan_error" >&2
+                exit 1
+              fi
+              sleep 5
+            done
+
             if [[ "$status" != "COMPLETE" ]]; then
               echo "Image scan did not complete for ${repository}:${IMAGE_TAG} (status: ${status:-unknown})" >&2
               exit 1
@@ -229,6 +254,7 @@ jobs:
             critical=$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' <<< "$findings")
             echo "${repository}:${IMAGE_TAG} critical findings: ${critical}"
             if (( critical > 0 )); then
+              jq -r '.imageScanFindings.findings[]? | select(.severity == "CRITICAL") | [.name, ([.attributes[]? | select(.key == "package_name" or .key == "package_version") | .value] | join("@"))] | @tsv' <<< "$findings"
               echo "Critical ECR findings block this image." >&2
               exit 1
             fi

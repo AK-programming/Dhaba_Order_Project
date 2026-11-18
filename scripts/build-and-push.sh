@@ -61,7 +61,7 @@ BUILT_IMG=()
 
 for svc in "${SERVICES[@]}"; do
     image="${REGISTRY}/dhaba-${TEAM}/${svc}:${TAG}"
-    args=(--platform "$PLATFORM" --build-arg "APP_VERSION=${TAG}" -t "$image")
+    args=(--platform "$PLATFORM" --provenance=false --build-arg "APP_VERSION=${TAG}" -t "$image")
 
     echo
     echo "=== ${svc} -> ${image}"
