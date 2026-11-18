@@ -21,9 +21,9 @@ No Docker Compose. Each service is built from its own Dockerfile, tagged with th
 
 ## 2. Set the variables
 
-    export TEAM=yourteam
-    export AWS_ACCOUNT=123456789012
-    export AWS_REGION=eu-west-1
+    export TEAM=visionary-rebel
+    export AWS_ACCOUNT=798645002901
+    export AWS_REGION=ap-southeast-2
     export REGISTRY=$AWS_ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com
     export TAG=$(git rev-parse HEAD)
 
@@ -118,7 +118,7 @@ Configure these **repository variables** under **Settings → Secrets and variab
 
 | Variable | Value |
 |---|---|
-| `TEAM` | `visionary-rebel` |
+| `TEAM` | `visionary-rebel` (repository folder prefix; normalize “Visionary Rebels” to this lowercase hyphenated value) |
 | `AWS_REGION` | `ap-southeast-2` |
 | `AWS_ROLE_ARN` | ARN of the GitHub Actions ECR-push role |
 | `AWS_ACCOUNT` | `798645002901` (optional; otherwise read from the assumed role) |

@@ -15,6 +15,11 @@ set -euo pipefail
 : "${AWS_ACCOUNT:?set AWS_ACCOUNT}"
 : "${AWS_REGION:?set AWS_REGION}"
 
+if [[ ! "$AWS_ACCOUNT" =~ ^[0-9]{12}$ ]]; then
+    echo "AWS_ACCOUNT must be the 12-digit AWS account ID; got '${AWS_ACCOUNT}'." >&2
+    exit 1
+fi
+
 PLATFORM="${PLATFORM:-linux/amd64}"
 PUSH="${PUSH:-1}"
 ALL=(web menu-api orders-api kitchen-worker stats-api postgres redis ops-monitor)
@@ -41,6 +46,12 @@ for svc in "${SERVICES[@]}"; do
 done
 
 if [ "$PUSH" = "1" ]; then
+    identity_account=$(aws sts get-caller-identity --query Account --output text)
+    if [ "$identity_account" != "$AWS_ACCOUNT" ]; then
+        echo "AWS credentials belong to account ${identity_account}, not AWS_ACCOUNT=${AWS_ACCOUNT}." >&2
+        exit 1
+    fi
+
     aws ecr get-login-password --region "$AWS_REGION" |
         docker login --username AWS --password-stdin "$REGISTRY"
 fi
