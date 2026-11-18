@@ -166,24 +166,24 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
       - name: Build and push images
         if: steps.changed.outputs.services != '[]'
         env:
-          TEAM: ${{ vars.TEAM }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          TEAM: ${{ vars.TEAM || 'visionary-rebel' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
+          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT || '798645002901' }}
           SERVICES_JSON: ${{ steps.changed.outputs.services }}
           GIT_SHA: ${{ github.sha }}
         run: |
-          AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           mapfile -t services < <(jq -r '.[]' <<< "$SERVICES_JSON")
-          AWS_ACCOUNT="$AWS_ACCOUNT" scripts/build-and-push.sh "${services[@]}"
+          scripts/build-and-push.sh "${services[@]}"
       - name: Wait for ECR scans and reject critical findings
         if: steps.changed.outputs.services != '[]'
         env:
-          TEAM: ${{ vars.TEAM }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT }}
+          TEAM: ${{ vars.TEAM || 'visionary-rebel' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
+          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT || '798645002901' }}
           SERVICES_JSON: ${{ steps.changed.outputs.services }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
