@@ -1,10 +1,10 @@
 # ---- Build stage ----
-# Creates a stock Laravel 11 app without dev packages, adds predis, then copies our code
+# Creates a stock Laravel 13 app without dev packages, adds predis, then copies our code
 # over it (overlay/). Composer and the build tools stay in this stage.
 FROM composer:2 AS builder
 
 WORKDIR /app
-RUN composer create-project laravel/laravel:^11.0 . \
+RUN composer create-project laravel/laravel:^13.0 . \
         --no-dev --prefer-dist --no-interaction --no-progress --ignore-platform-reqs && \
     composer require predis/predis:^2.2 \
         --update-no-dev --no-interaction --no-progress --ignore-platform-reqs && \
