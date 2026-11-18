@@ -1,0 +1,5 @@
+GitHub to Slack Integration Test
+
+Repository: dhaba-visionary-rebel
+Purpose: Testing GitHub commit notifications in Slack.
+Status: Integration test successful.
