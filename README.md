@@ -54,34 +54,59 @@ These commands generate credentials locally; never commit or share them:
     done
 
 The EBS CSI driver is installed as an EKS add-on. Install the NGINX Ingress
-controller, then deploy with:
+controller and cert-manager, then deploy with:
 
     helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
     helm repo update
     helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
       --namespace ingress-nginx --create-namespace \
-      --set controller.service.type=ClusterIP
+      --set controller.service.type=LoadBalancer \
+      --set-string 'controller.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme=internet-facing'
 
+    helm repo add jetstack https://charts.jetstack.io
+    helm repo update
+    helm upgrade --install cert-manager jetstack/cert-manager \
+      --version v1.21.3 --namespace cert-manager --create-namespace \
+      --set crds.enabled=true
+    kubectl apply -f k8s/cert-manager/cluster-issuer.yaml
     kubectl apply -k k8s/overlays/staging
     kubectl get pods,pvc -n staging -o wide
 
-The current three `t3.small` workers each have an 11-pod limit. Run staging
-only on this cluster for now; production is intentionally scaled to zero, with
-its EBS volumes retained. Deploy production only after increasing worker
-capacity:
+The worker nodes are `t3.small` instances with an 11-pod limit. The current
+cluster runs staging and production; production has separate database and Redis
+volumes. Both environments are routed through the public NGINX load balancer.
+The app has no authentication and its order API returns customer names and
+order details, so do not use real customer data until authentication is added.
+The public load balancer and worker nodes incur ongoing AWS charges.
 
     kubectl apply -k k8s/overlays/production
+
+The public NGINX load balancer routes `staging.visionaryrebels.com` to staging,
+and `visionaryrebels.com` plus `www.visionaryrebels.com` to production. It is an
+AWS load balancer hostname, not a fixed IP. Add CNAME records for
+`staging.visionaryrebels.com` and `www.visionaryrebels.com` pointing to the load
+balancer hostname. For the apex `visionaryrebels.com`, use your DNS provider's
+ALIAS/ANAME or flattening feature. After DNS resolves publicly, cert-manager
+obtains and renews Let's Encrypt certificates automatically. HTTPS will not be
+ready until DNS points to the load balancer. Retrieve the current target with:
+
+    kubectl get svc -n ingress-nginx ingress-nginx-controller \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+
+The overlays pin application images to the verified commit tag. Update the
+`images` and `APP_VERSION` values in both overlays when deploying a later
+verified release.
 
 For local smoke testing, forward the Ingress controller to localhost and send
 the staging host header:
 
     kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
-    curl -H 'Host: staging.visionary-rebel.test' http://127.0.0.1:8080/
+    curl -H 'Host: staging.visionaryrebels.com' http://127.0.0.1:8080/
 
 Each environment keeps separate database and Redis volumes. Do not copy a
 production secret into Git or use the staging database for production. The
-controller is ClusterIP-only, so it does not create an internet-facing load
-balancer; a public load balancer and DNS records are a separate step.
+Ingress controller routes only web traffic; APIs and databases remain internal
+Services.
 
 ## Environment variables
 

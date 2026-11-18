@@ -7,12 +7,27 @@ resources:
   - namespace.yaml
   - ../../base
 
+images:
+  - name: 940482421289.dkr.ecr.eu-north-1.amazonaws.com/dhaba-visionary-rebel/web
+    newTag: bf39c2f0570b2ab90805229d1d4888b515bd7219
+  - name: 940482421289.dkr.ecr.eu-north-1.amazonaws.com/dhaba-visionary-rebel/menu-api
+    newTag: bf39c2f0570b2ab90805229d1d4888b515bd7219
+  - name: 940482421289.dkr.ecr.eu-north-1.amazonaws.com/dhaba-visionary-rebel/orders-api
+    newTag: bf39c2f0570b2ab90805229d1d4888b515bd7219
+  - name: 940482421289.dkr.ecr.eu-north-1.amazonaws.com/dhaba-visionary-rebel/kitchen-worker
+    newTag: bf39c2f0570b2ab90805229d1d4888b515bd7219
+  - name: 940482421289.dkr.ecr.eu-north-1.amazonaws.com/dhaba-visionary-rebel/stats-api
+    newTag: bf39c2f0570b2ab90805229d1d4888b515bd7219
+
 patches:
   - target:
       version: v1
       kind: ConfigMap
       name: dhaba-config
     patch: |-
+      - op: replace
+        path: /data/APP_VERSION
+        value: bf39c2f0570b2ab90805229d1d4888b515bd7219
       - op: replace
         path: /data/NGINX_SERVICE_DOMAIN
         value: .production.svc.cluster.local
@@ -32,4 +47,23 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: visionary-rebel.test
+        value: visionaryrebels.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: visionaryrebels.com
+      - op: add
+        path: /spec/tls/0/hosts/-
+        value: www.visionaryrebels.com
+      - op: add
+        path: /spec/rules/-
+        value:
+          host: www.visionaryrebels.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: web
+                    port:
+                      name: http
