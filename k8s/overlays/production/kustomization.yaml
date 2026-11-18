@@ -47,4 +47,23 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: visionary-rebel.test
+        value: visionaryrebels.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: visionaryrebels.com
+      - op: add
+        path: /spec/tls/0/hosts/-
+        value: www.visionaryrebels.com
+      - op: add
+        path: /spec/rules/-
+        value:
+          host: www.visionaryrebels.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: web
+                    port:
+                      name: http

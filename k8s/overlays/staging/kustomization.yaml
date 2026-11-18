@@ -21,16 +21,17 @@ images:
 
 patches:
   - target:
+      group: networking.k8s.io
       version: v1
-      kind: Service
-      name: web
+      kind: Ingress
+      name: dhaba
     patch: |-
-      - op: add
-        path: /spec/type
-        value: LoadBalancer
       - op: replace
-        path: /spec/ports/0/port
-        value: 80
+        path: /spec/tls/0/hosts/0
+        value: staging.visionaryrebels.com
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.visionaryrebels.com
   - target:
       version: v1
       kind: ConfigMap
@@ -42,12 +43,3 @@ patches:
       - op: replace
         path: /data/NGINX_SERVICE_DOMAIN
         value: .staging.svc.cluster.local
-  - target:
-      group: networking.k8s.io
-      version: v1
-      kind: Ingress
-      name: dhaba
-    patch: |-
-      - op: replace
-        path: /spec/rules/0/host
-        value: staging.visionary-rebel.test
