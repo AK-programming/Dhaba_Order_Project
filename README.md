@@ -65,12 +65,20 @@ controller, then deploy with:
     kubectl apply -k k8s/overlays/staging
     kubectl get pods,pvc -n staging -o wide
 
-The current three `t3.small` workers each have an 11-pod limit. Run staging
-only on this cluster for now; production is intentionally scaled to zero, with
-its EBS volumes retained. Deploy production only after increasing worker
-capacity:
+The worker nodes are `t3.small` instances with an 11-pod limit. The current
+cluster runs staging and production; production has separate database and Redis
+volumes. The staging overlay exposes its frontend through a temporary
+internet-facing AWS load balancer over HTTP. Use staging with test data only.
+The production frontend remains ClusterIP-only: the app has no authentication,
+and its order API returns customer names, so production must not be public until
+authentication and HTTPS are configured. The staging load balancer and extra
+worker incur ongoing AWS charges.
 
     kubectl apply -k k8s/overlays/production
+
+The overlays pin application images to the verified commit tag. Update the
+`images` and `APP_VERSION` values in both overlays when deploying a later
+verified release.
 
 For local smoke testing, forward the Ingress controller to localhost and send
 the staging host header:
@@ -80,8 +88,8 @@ the staging host header:
 
 Each environment keeps separate database and Redis volumes. Do not copy a
 production secret into Git or use the staging database for production. The
-controller is ClusterIP-only, so it does not create an internet-facing load
-balancer; a public load balancer and DNS records are a separate step.
+Ingress controller remains ClusterIP-only; staging exposes only its web Service
+directly, leaving its APIs and databases private.
 
 ## Environment variables
 
