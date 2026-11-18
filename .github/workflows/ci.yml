@@ -182,7 +182,7 @@ jobs:
         if: steps.changed.outputs.services != '[]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || 'arn:aws:iam::940482421289:role/GitHubActionsDhabaOrdersECR' }}
           aws-region: ${{ vars.AWS_REGION || 'eu-north-1' }}
       - name: Build and push images
         if: steps.changed.outputs.services != '[]'
