@@ -113,7 +113,7 @@ It logs in to ECR, builds with the commit as tag, pushes, and prints a table of 
 
 ## GitHub Actions build and push (C7)
 
-`.github/workflows/ci.yml` builds and pushes only changed service images after all test and lint jobs pass on a push to `main`. Images use the commit SHA as the tag. ECR scans run after push; a scan failure or any critical finding fails the workflow.
+`.github/workflows/ci.yml` builds and pushes changed service images after all test and lint jobs pass on a push to `main`. Images use the commit SHA as the tag. The build disables provenance attestations so images remain a single manifest that ECR basic scanning can scan. ECR scan-on-push starts asynchronously, so CI waits for each scan to appear and complete; a scan failure or any critical finding fails the workflow. Changing the shared build script triggers a rebuild of all service images.
 
 Configure these **repository variables** under **Settings → Secrets and variables → Actions → Variables**:
 
