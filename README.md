@@ -8,7 +8,7 @@ Seven services, each in its own folder with its own Dockerfile. Build each into 
 | `menu-api` | Stateless | Python, FastAPI | 8000 | Menu from Postgres, cached in Redis |
 | `orders-api` | Stateless | Go | 8080 | Saves orders, queues jobs, writes stats. `/info` shows version and pod |
 | `kitchen-worker` | Stateless, no web port | Java, Spring Boot | none | Takes queue jobs, moves orders new, cooking, ready |
-| `stats-api` | Stateless | PHP, Laravel 11 | 9000 | Orders per minute and top dishes from Redis |
+| `stats-api` | Stateless | PHP, Laravel 13 | 9000 | Orders per minute and top dishes from Redis |
 | `postgres` | Stateful | PostgreSQL 16 | 5432 | Orders and menu. Volume at `/var/lib/postgresql/data` |
 | `redis` | Stateful | Redis 7 | 6379 | Cache and job queue. Volume at `/data` |
 
@@ -49,11 +49,10 @@ Kubernetes notes for the next step:
 - `orders-api`: `-X main.version` cannot override a variable set from `os.Getenv`; fixed. The `--health-check` flag the Dockerfile used did not exist; added. Name and price now come from the menu table, not the client. Stats keys the stats-api reads are now written by orders-api.
 - `redis.conf`: `allkeys-lru` could evict queued jobs. Changed to `noeviction`.
 - `kitchen-worker`: `DATABASE_URL` conflicted with the `postgres://` form the other services use, so it now reads `DB_URL`. The Docker health check pointed at an actuator that does not exist; it now uses a heartbeat file. Constructor injection makes it testable without a Spring context. Checkstyle removed from the build because it can fail the image build on style warnings.
-- `stats-api`: `config:cache` makes `env()` return null at runtime; replaced with `getenv`. The image now builds a stock Laravel 11 app (no dev packages) and applies `overlay/` on top, so no framework boilerplate is committed. It runs PHP-FPM and Nginx as a non-root user, and caches config and routes when the container starts.
+- `stats-api`: `config:cache` makes `env()` return null at runtime; replaced with `getenv`. The image now builds a stock Laravel 13 app (no dev packages) and applies `overlay/` on top, so no framework boilerplate is committed. It runs PHP-FPM and Nginx as a non-root user, and caches config and routes when the container starts.
 - `web`: runs as a non-root Nginx on port 8080. The API hosts are resolved per request, so the container starts without the backends.
 - Every image carries the commit as `APP_VERSION` and as an image label. `docker-compose.yml` was removed; images are built and pushed with the scripts in `scripts/`.
 
-## Testing status
+## Continuous integration
 
-Run here: `web` (3 tests pass, production build succeeds), `menu-api` (4 tests pass).
-Not run here, because the sandbox has no Docker daemon and cannot download Go, Maven or Composer dependencies: `orders-api`, `kitchen-worker`, `stats-api`, and all eight Docker builds. The scripts pass `bash -n`; they have not run against AWS. `orders-api/main.go` is gofmt-clean and the PHP files pass `php -l`. Run `go mod tidy` in `orders-api` once to create `go.sum`, then commit it.
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It runs web lint/tests/build, menu API lint/tests, Go formatting/vet/tests, kitchen worker tests, stats API PHP tests, and Dockerfile/shell-script lint in parallel.
