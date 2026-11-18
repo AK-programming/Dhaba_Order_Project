@@ -15,7 +15,7 @@ RUN rm -rf tests && \
     composer dump-autoload --optimize --classmap-authoritative --no-dev --no-interaction
 
 # ---- Final stage: PHP-FPM + Nginx, production settings ----
-FROM php:8.3-fpm-alpine
+FROM php:8.4-fpm-alpine
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} \
@@ -27,7 +27,8 @@ ENV APP_VERSION=${APP_VERSION} \
     DB_CONNECTION=sqlite \
     REDIS_CLIENT=predis \
     REDIS_HOST=redis \
-    REDIS_PORT=6379
+    REDIS_PORT=6379 \
+    REDIS_PREFIX=
 LABEL org.opencontainers.image.revision="${APP_VERSION}"
 
 RUN apk add --no-cache nginx && \

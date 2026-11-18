@@ -83,7 +83,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          php-version: "8.4"
           extensions: mbstring, xml, pdo_sqlite
           tools: composer:v2
       - name: Check PHP syntax
@@ -118,6 +118,22 @@ jobs:
           sudo apt-get install --yes shellcheck
           find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
 
+  kubernetes-manifests:
+    name: Kubernetes manifest validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.0
+      - name: Render and validate Kustomize overlays
+        run: |
+          for overlay in staging production; do
+            kubectl kustomize "k8s/overlays/${overlay}" > "/tmp/${overlay}.yaml"
+            docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \
+              -strict -summary - < "/tmp/${overlay}.yaml"
+          done
+
   build-and-push:
     name: Build, scan, and push changed images
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -128,6 +144,7 @@ jobs:
       - kitchen-worker
       - stats-api
       - dockerfiles-and-shell
+      - kubernetes-manifests
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -165,14 +182,14 @@ jobs:
         if: steps.changed.outputs.services != '[]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || 'arn:aws:iam::940482421289:role/GitHubActionsDhabaOrdersECR' }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-north-1' }}
       - name: Build and push images
         if: steps.changed.outputs.services != '[]'
         env:
           TEAM: ${{ vars.TEAM || 'visionary-rebel' }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
-          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT || '798645002901' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
+          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT || '940482421289' }}
           SERVICES_JSON: ${{ steps.changed.outputs.services }}
           GIT_SHA: ${{ github.sha }}
         run: |
@@ -182,8 +199,8 @@ jobs:
         if: steps.changed.outputs.services != '[]'
         env:
           TEAM: ${{ vars.TEAM || 'visionary-rebel' }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
-          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT || '798645002901' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
+          AWS_ACCOUNT: ${{ vars.AWS_ACCOUNT || '940482421289' }}
           SERVICES_JSON: ${{ steps.changed.outputs.services }}
           IMAGE_TAG: ${{ github.sha }}
         run: |

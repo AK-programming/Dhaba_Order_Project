@@ -22,8 +22,9 @@ No Docker Compose. Each service is built from its own Dockerfile, tagged with th
 ## 2. Set the variables
 
     export TEAM=visionary-rebel
-    export AWS_ACCOUNT=798645002901
-    export AWS_REGION=ap-southeast-2
+    export AWS_ACCOUNT=940482421289
+    export AWS_REGION=eu-north-1
+    export AWS_PROFILE=afnan-personal
     export REGISTRY=$AWS_ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com
     export TAG=$(git rev-parse HEAD)
 
@@ -81,7 +82,7 @@ Run one image on its own. `web` starts without the backends:
 
 ## 6. Log in to ECR and push
 
-    aws ecr get-login-password --region $AWS_REGION \
+    aws ecr get-login-password --profile $AWS_PROFILE --region $AWS_REGION \
       | docker login --username AWS --password-stdin $REGISTRY
 
     docker push $REGISTRY/dhaba-$TEAM/web:$TAG
@@ -91,12 +92,12 @@ The login lasts 12 hours.
 
 ## 7. Verify in ECR
 
-    aws ecr describe-images --region $AWS_REGION \
+    aws ecr describe-images --profile $AWS_PROFILE --region $AWS_REGION \
       --repository-name dhaba-$TEAM/web --query 'imageDetails[].imageTags'
 
 After the scan finishes (a minute or two):
 
-    aws ecr describe-image-scan-findings --region $AWS_REGION \
+    aws ecr describe-image-scan-findings --profile $AWS_PROFILE --region $AWS_REGION \
       --repository-name dhaba-$TEAM/web --image-id imageTag=$TAG \
       --query 'imageScanFindings.findingSeverityCounts'
 
@@ -119,11 +120,29 @@ Configure these **repository variables** under **Settings → Secrets and variab
 | Variable | Value |
 |---|---|
 | `TEAM` | `visionary-rebel` (repository folder prefix; normalize “Visionary Rebels” to this lowercase hyphenated value) |
-| `AWS_REGION` | `ap-southeast-2` |
-| `AWS_ROLE_ARN` | ARN of the GitHub Actions ECR-push role |
-| `AWS_ACCOUNT` | `798645002901` (optional; otherwise read from the assumed role) |
+| `AWS_REGION` | `eu-north-1` |
+| `AWS_ROLE_ARN` | `arn:aws:iam::940482421289:role/GitHubActionsDhabaOrdersECR` |
+| `AWS_ACCOUNT` | `940482421289` (optional; otherwise read from the assumed role) |
 
-The AWS role must trust GitHub's OIDC provider (`token.actions.githubusercontent.com`) with audience `sts.amazonaws.com` and subject restricted to `repo:tauseefmarwat/dhaba-visionary-rebel:ref:refs/heads/main`. Grant it `ecr:GetAuthorizationToken` and the image upload and scan-read actions on `arn:aws:ecr:ap-southeast-2:798645002901:repository/dhaba-visionary-rebel/*`. Do not create AWS access keys or store them in GitHub.
+Set the repository variables under **Settings → Secrets and variables → Actions → Variables**. The AWS IAM role `GitHubActionsDhabaOrdersECR` trusts GitHub's OIDC provider (`token.actions.githubusercontent.com`) with audience `sts.amazonaws.com` and subject restricted to `repo:tauseefmarwat/dhaba-visionary-rebel:ref:refs/heads/main`. It has `ecr:GetAuthorizationToken` and the image upload and scan-read actions on `arn:aws:ecr:eu-north-1:940482421289:repository/dhaba-visionary-rebel/*`. Do not create AWS access keys or store them in GitHub.
+
+## Kubernetes manifests
+
+The base and environment overlays are under `k8s/`. CI renders and validates
+both overlays with Kustomize and kubeconform. The images are pinned to commit
+`be6c64e328398d91433041201f45c2dc8c2d6b0e`; update image tags to the commit
+that was built and scanned before deploying a later release.
+
+The current EKS worker role includes `AmazonEC2ContainerRegistryPullOnly`.
+Because EKS and ECR are in the same AWS account, the kubelet uses its node role
+to obtain short-lived pull credentials. We intentionally do not store ECR
+access keys or an expiring Docker login secret in the cluster, and do not need
+the sprint's token-refresh CronJob for this EKS setup.
+
+Create `dhaba-db` and `dhaba-app` Secrets directly in both `staging` and
+`production` before applying an overlay. Secret values must not be stored in
+this repository. `postgres` and `redis` use StatefulSets with separate EBS
+volume claims in each namespace; install the EBS CSI driver before deployment.
 
 ## Problems you may hit
 
