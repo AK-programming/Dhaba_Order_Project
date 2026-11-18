@@ -21,6 +21,17 @@ images:
 
 patches:
   - target:
+      version: v1
+      kind: Service
+      name: web
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: replace
+        path: /spec/ports/0/port
+        value: 80
+  - target:
       group: networking.k8s.io
       version: v1
       kind: Ingress
