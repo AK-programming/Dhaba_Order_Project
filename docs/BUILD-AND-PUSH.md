@@ -110,6 +110,21 @@ Any `CRITICAL` count above zero fails the pipeline in Phase 3, so fix it now.
 
 It logs in to ECR, builds with the commit as tag, pushes, and prints a table of sizes and users to paste into the pull request. `ops-monitor` is skipped until `scripts/monitor/` exists.
 
+## GitHub Actions build and push (C7)
+
+`.github/workflows/ci.yml` builds and pushes only changed service images after all test and lint jobs pass on a push to `main`. Images use the commit SHA as the tag. ECR scans run after push; a scan failure or any critical finding fails the workflow.
+
+Configure these **repository variables** under **Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Value |
+|---|---|
+| `TEAM` | `visionary-rebel` |
+| `AWS_REGION` | `ap-southeast-2` |
+| `AWS_ROLE_ARN` | ARN of the GitHub Actions ECR-push role |
+| `AWS_ACCOUNT` | `798645002901` (optional; otherwise read from the assumed role) |
+
+The AWS role must trust GitHub's OIDC provider (`token.actions.githubusercontent.com`) with audience `sts.amazonaws.com` and subject restricted to `repo:tauseefmarwat/dhaba-visionary-rebel:ref:refs/heads/main`. Grant it `ecr:GetAuthorizationToken` and the image upload and scan-read actions on `arn:aws:ecr:ap-southeast-2:798645002901:repository/dhaba-visionary-rebel/*`. Do not create AWS access keys or store them in GitHub.
+
 ## Problems you may hit
 
 | Message | Cause and fix |

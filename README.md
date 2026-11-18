@@ -55,4 +55,4 @@ Kubernetes notes for the next step:
 
 ## Continuous integration
 
-The GitHub Actions workflow in `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It runs web lint/tests/build, menu API lint/tests, Go formatting/vet/tests, kitchen worker tests, stats API PHP tests, and Dockerfile/shell-script lint in parallel.
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs checks on pull requests and pushes to `main`; after all checks pass on `main`, it builds, scans, and pushes only changed images to ECR using GitHub OIDC. See [docs/BUILD-AND-PUSH.md](docs/BUILD-AND-PUSH.md) for the required repository variables and AWS role trust setup.
