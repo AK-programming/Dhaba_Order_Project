@@ -26,6 +26,63 @@ See [docs/BUILD-AND-PUSH.md](docs/BUILD-AND-PUSH.md). Short version:
     scripts/create-ecr-repos.sh      # once
     scripts/build-and-push.sh        # build, tag with the commit, push
 
+## Deploy to EKS
+
+Kustomize manifests are in `k8s/base/` with staging and production overlays. The
+current EKS cluster is `dhaba-orders` in account `940482421289`, region
+`eu-north-1`. The worker-node IAM role has ECR pull-only access, so Kubernetes
+does not need a long-lived ECR image-pull secret or a token-refresh CronJob.
+
+Configure kubectl and create application secrets directly in both namespaces.
+These commands generate credentials locally; never commit or share them:
+
+    aws eks update-kubeconfig --profile afnan-personal --region eu-north-1 --name dhaba-orders
+    for namespace in staging production; do
+      kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
+      DB_PASSWORD="$(openssl rand -hex 32)"
+      APP_KEY="base64:$(openssl rand -base64 32)"
+      kubectl create secret generic dhaba-db \
+        --namespace "$namespace" \
+        --from-literal=DB_USER=dhaba \
+        --from-literal=DB_PASSWORD="$DB_PASSWORD" \
+        --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create secret generic dhaba-app \
+        --namespace "$namespace" \
+        --from-literal=APP_KEY="$APP_KEY" \
+        --dry-run=client -o yaml | kubectl apply -f -
+      unset DB_PASSWORD APP_KEY
+    done
+
+The EBS CSI driver is installed as an EKS add-on. Install the NGINX Ingress
+controller, then deploy with:
+
+    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+    helm repo update
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+      --namespace ingress-nginx --create-namespace \
+      --set controller.service.type=ClusterIP
+
+    kubectl apply -k k8s/overlays/staging
+    kubectl get pods,pvc -n staging -o wide
+
+The current three `t3.small` workers each have an 11-pod limit. Run staging
+only on this cluster for now; production is intentionally scaled to zero, with
+its EBS volumes retained. Deploy production only after increasing worker
+capacity:
+
+    kubectl apply -k k8s/overlays/production
+
+For local smoke testing, forward the Ingress controller to localhost and send
+the staging host header:
+
+    kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
+    curl -H 'Host: staging.visionary-rebel.test' http://127.0.0.1:8080/
+
+Each environment keeps separate database and Redis volumes. Do not copy a
+production secret into Git or use the staging database for production. The
+controller is ClusterIP-only, so it does not create an internet-facing load
+balancer; a public load balancer and DNS records are a separate step.
+
 ## Environment variables
 
 | Service | Variable | Default |
@@ -36,12 +93,19 @@ See [docs/BUILD-AND-PUSH.md](docs/BUILD-AND-PUSH.md). Short version:
 | stats-api | `REDIS_HOST`, `REDIS_PORT`, `APP_KEY` (optional), `APP_VERSION` | `redis`, 6379 |
 | postgres | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | none, set them |
 
-Kubernetes notes for the next step:
+Kubernetes details:
 
 - Keep the Service names `menu-api`, `orders-api`, `stats-api`, `postgres`, `redis`. Nginx and the defaults rely on them.
 - In `orders-api`, set `POD_NAME` from the downward API (`metadata.name`) so `/info` shows the pod.
 - `kitchen-worker` has no port. For a liveness probe use an exec probe: `test -n "$(find /tmp/kitchen-heartbeat -mmin -1)"`.
 - Use a StatefulSet (or a Deployment with a PVC) for `postgres` and `redis`.
+- EKS node IAM permissions provide short-lived ECR pulls; no static AWS keys or
+  12-hour ECR token need to live in Kubernetes.
+- `k8s/overlays/production` runs two replicas of every stateless service and
+  spreads them across nodes; staging uses one replica per service. Deployments
+  use no-surge rolling updates to avoid requiring extra pod slots during rollout.
+- The Ingress objects expect an `nginx` IngressClass. Install an Ingress
+  controller before expecting the hostnames to resolve to the application.
 
 ## Changes from the first draft
 
@@ -55,4 +119,4 @@ Kubernetes notes for the next step:
 
 ## Continuous integration
 
-The GitHub Actions workflow in `.github/workflows/ci.yml` runs checks on pull requests and pushes to `main`; after all checks pass on `main`, it builds, scans, and pushes only changed images to ECR using GitHub OIDC. See [docs/BUILD-AND-PUSH.md](docs/BUILD-AND-PUSH.md) for the required repository variables and AWS role trust setup.
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs checks on pull requests and pushes to `main`, validates both Kustomize overlays, and after all checks pass on `main`, builds, scans, and pushes only changed images to personal-account ECR using GitHub OIDC. See [docs/BUILD-AND-PUSH.md](docs/BUILD-AND-PUSH.md) for the required repository variables and AWS role trust setup.
