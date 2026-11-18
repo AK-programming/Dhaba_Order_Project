@@ -32,6 +32,7 @@ ENV APP_VERSION=${APP_VERSION} \
 LABEL org.opencontainers.image.revision="${APP_VERSION}"
 
 RUN apk add --no-cache nginx && \
+    apk upgrade --no-cache && \
     docker-php-ext-install opcache && \
     cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" && \
     rm -f /usr/local/etc/php-fpm.d/*.conf && \

@@ -1,5 +1,5 @@
 # ---- Build stage: Node.js lives here only ----
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -12,6 +12,10 @@ RUN npm run build && echo "${APP_VERSION}" > dist/version.txt
 
 # ---- Final stage: Nginx only, runs as user 101 (non-root), listens on 8080 ----
 FROM nginxinc/nginx-unprivileged:1.27-alpine
+
+USER root
+RUN apk upgrade --no-cache
+USER 101
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}

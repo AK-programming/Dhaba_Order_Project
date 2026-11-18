@@ -19,10 +19,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - run: npm audit --audit-level=low
       - run: npm run lint
       - run: npm test
       - run: npm run build
@@ -215,11 +216,14 @@ jobs:
 
           scan_error=$(mktemp)
           trap 'rm -f "$scan_error"' EXIT
+          critical_found=0
+          scan_failed=0
 
           while IFS= read -r service; do
             repository="dhaba-${TEAM}/${service}"
             echo "Waiting for scan: ${repository}:${IMAGE_TAG}"
             findings=""
+            status=""
             for attempt in {1..60}; do
               if findings=$(aws ecr describe-image-scan-findings \
                 --region "$AWS_REGION" \
@@ -229,33 +233,50 @@ jobs:
                 if [[ "$status" == "COMPLETE" ]]; then
                   break
                 elif [[ "$status" != "IN_PROGRESS" ]]; then
-                  echo "Image scan failed for ${repository}:${IMAGE_TAG} (status: ${status:-unknown})" >&2
+                  description=$(jq -r '.imageScanStatus.description // empty' <<< "$findings")
+                  echo "Image scan failed for ${repository}:${IMAGE_TAG} (status: ${status:-unknown}; ${description:-no details})" >&2
                   cat "$scan_error" >&2
-                  exit 1
+                  scan_failed=1
+                  break
                 fi
               elif ! grep -q "ScanNotFoundException" "$scan_error"; then
                 cat "$scan_error" >&2
-                exit 1
+                scan_failed=1
+                break
               fi
 
               if (( attempt == 60 )); then
                 echo "Timed out waiting for ECR scan of ${repository}:${IMAGE_TAG}" >&2
                 cat "$scan_error" >&2
-                exit 1
+                scan_failed=1
+                break
               fi
               sleep 5
             done
 
             if [[ "$status" != "COMPLETE" ]]; then
               echo "Image scan did not complete for ${repository}:${IMAGE_TAG} (status: ${status:-unknown})" >&2
-              exit 1
+              scan_failed=1
+              continue
             fi
 
+            jq -r '.imageScanFindings.findingSeverityCounts // {} | to_entries[] | "  \(.key): \(.value)"' <<< "$findings"
             critical=$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' <<< "$findings")
-            echo "${repository}:${IMAGE_TAG} critical findings: ${critical}"
+            high=$(jq -r '.imageScanFindings.findingSeverityCounts.HIGH // 0' <<< "$findings")
+            echo "${repository}:${IMAGE_TAG} critical findings: ${critical}; high findings: ${high}"
+            if (( critical > 0 || high > 0 )); then
+              jq -r '.imageScanFindings.findings[]? | select(.severity == "CRITICAL" or .severity == "HIGH") | [.severity, .name, ([.attributes[]? | select(.key == "package_name" or .key == "package_version") | .value] | join("@"))] | @tsv' <<< "$findings"
+            fi
             if (( critical > 0 )); then
-              jq -r '.imageScanFindings.findings[]? | select(.severity == "CRITICAL") | [.name, ([.attributes[]? | select(.key == "package_name" or .key == "package_version") | .value] | join("@"))] | @tsv' <<< "$findings"
-              echo "Critical ECR findings block this image." >&2
-              exit 1
+              critical_found=1
             fi
           done < <(jq -r '.[]' <<< "$SERVICES_JSON")
+
+          if (( scan_failed )); then
+            echo "One or more image scans failed or did not complete." >&2
+            exit 1
+          fi
+          if (( critical_found )); then
+            echo "Critical ECR findings block this image set." >&2
+            exit 1
+          fi
